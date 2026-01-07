@@ -14,12 +14,10 @@ pub async fn run_actuator_task(
     recorder: Arc<BenchmarkRecorder>,
     shared_resource: Arc<Mutex<()>>,
     shutdown_flag: Arc<AtomicBool>,
+    start_time: Instant, // Shared experiment clock
 ) {
     let mut pid = PidController::new(1.0, 0.1, 0.01);
     let deadline = Duration::from_millis(2);
-
-    let experiment_start = Instant::now();
-    let mut last_sensor_ts: Option<u64> = None;
 
     while !shutdown_flag.load(Ordering::Relaxed) {
         let sensor_data = match receiver.recv().await {
@@ -29,32 +27,31 @@ pub async fn run_actuator_task(
 
         let cycle_start = Instant::now();
 
-        let now_ns = experiment_start.elapsed().as_nanos() as u64;
-        let total_latency_ns = now_ns.saturating_sub(sensor_data.timestamp);
+        // End-to-end latency (single clock domain)
+        let now_ns = start_time.elapsed().as_nanos() as u64;
+        let total_latency_ns =
+            now_ns.saturating_sub(sensor_data.timestamp);
 
-        let dt = match last_sensor_ts {
-            Some(prev) if sensor_data.timestamp > prev => {
-                (sensor_data.timestamp - prev) as f64 / 1_000_000_000.0
-            }
-            _ => config.sensor_period_ms as f64 / 1000.0,
-        };
-
-        last_sensor_ts = Some(sensor_data.timestamp);
-
+        // PID control
         let error = -sensor_data.position;
+        let dt = config.sensor_period_ms as f64 / 1000.0;
         let _control_output = pid.compute(error, dt);
 
+        // Shared resource contention
         let lock_start = Instant::now();
-        let _guard = shared_resource.lock().await;
+        {
+            let _guard = shared_resource.lock().await;
+        }
         let lock_wait_ns = lock_start.elapsed().as_nanos() as u64;
 
+        // Simulated actuation processing
         if config.processing_time_ns > 0 {
             busy_spin_ns(config.processing_time_ns);
         }
 
+        // Deadline evaluation
         let elapsed = cycle_start.elapsed();
         let deadline_met = elapsed <= deadline;
-
         let lateness_ns = if deadline_met {
             0
         } else {
@@ -73,9 +70,8 @@ pub async fn run_actuator_task(
     }
 }
 
-/// TRUE CPU burn (intentional, for stress testing)
+/// True CPU burn for stress testing (intentional)
 fn busy_spin_ns(duration_ns: u64) {
-    let start = Instant::now();
     let target = Duration::from_nanos(duration_ns);
     while start.elapsed() < target {
         std::hint::spin_loop();

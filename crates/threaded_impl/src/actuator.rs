@@ -17,9 +17,10 @@ pub fn run_actuator_thread(
     recorder: Arc<BenchmarkRecorder>,
     shared_resource: Arc<Mutex<()>>,
     shutdown_flag: Arc<AtomicBool>,
+    start_time: Instant, // ✅ Shared clock
 ) {
     let mut pid = PidController::new(1.0, 0.1, 0.01);
-    let actuator_deadline = Duration::from_millis(2); // 1–2ms as per brief
+    let actuator_deadline = Duration::from_millis(2);
 
     let mut last_timestamp_ns: Option<u64> = None;
 
@@ -29,26 +30,26 @@ pub fn run_actuator_thread(
             Err(_) => continue,
         };
 
-        let start = Instant::now();
+        let cycle_start = Instant::now();
 
-        // --- Latency ---
-        let now_ns = start.elapsed().as_nanos() as u64;
+        // --- Accurate end-to-end latency ---
+        let now_ns = start_time.elapsed().as_nanos() as u64;
         let total_latency_ns = now_ns.saturating_sub(sensor_data.timestamp);
 
         // --- PID computation ---
-        let dt = if let Some(prev) = last_timestamp_ns {
-            (sensor_data.timestamp - prev) as f64 / 1_000_000_000.0
-        } else {
-            config.sensor_period_ms as f64 / 1000.0
+        let dt = match last_timestamp_ns {
+            Some(prev) if sensor_data.timestamp > prev => {
+                (sensor_data.timestamp - prev) as f64 / 1_000_000_000.0
+            }
+            _ => config.sensor_period_ms as f64 / 1000.0,
         };
-
-        let setpoint = 0.0;
-        let error = setpoint - sensor_data.position;
-        let _control_output = pid.compute(error, dt);
 
         last_timestamp_ns = Some(sensor_data.timestamp);
 
-        // --- Shared resource access ---
+        let error = -sensor_data.position;
+        let _control_output = pid.compute(error, dt);
+
+        // --- Shared resource contention ---
         let lock_start = Instant::now();
         let _guard = shared_resource.lock().unwrap();
         let lock_wait_ns = lock_start.elapsed().as_nanos() as u64;
@@ -58,7 +59,8 @@ pub fn run_actuator_thread(
             busy_wait_ns(config.processing_time_ns);
         }
 
-        let elapsed = start.elapsed();
+        // --- Deadline analysis ---
+        let elapsed = cycle_start.elapsed();
         let deadline_met = elapsed <= actuator_deadline;
 
         let lateness_ns = if deadline_met {
