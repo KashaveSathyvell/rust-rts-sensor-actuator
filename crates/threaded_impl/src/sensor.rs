@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -9,10 +9,10 @@ use common::metrics::CycleResult;
 
 pub fn run_sensor_thread(
     config: ExperimentConfig,
-    sender: Sender<SensorData>,
+    sender: SyncSender<SensorData>,
     recorder: Arc<BenchmarkRecorder>,
     shutdown_flag: Arc<AtomicBool>,
-    start_time: Instant, // ✅ Shared clock
+    start_time: Instant,
 ) {
     let period = Duration::from_millis(config.sensor_period_ms);
     let mut cycle_id: u64 = 0;
@@ -58,7 +58,7 @@ pub fn run_sensor_thread(
         recorder.record(CycleResult {
             cycle_id,
             mode: config.mode.clone(),
-            total_latency_ns: 0,   // Filled by actuator
+            total_latency_ns: 0,
             processing_time_ns: 0,
             lock_wait_ns: 0,
             deadline_met,

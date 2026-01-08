@@ -1,0 +1,10 @@
+[package]
+name = "benchmark_runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { path = "../../crates/common" }
+threaded_impl = { path = "../../crates/threaded_impl" }
+async_impl = { path = "../../crates/async_impl" }
+tokio = { version = "1.37", features = ["full"] }

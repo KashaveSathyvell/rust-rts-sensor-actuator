@@ -1,6 +1,10 @@
-[package]
-name = "RustBasedSensorActuator"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "crates/common",
+    "crates/threaded_impl",
+    "crates/async_impl",
+    "bin/benchmark_runner",
+    "bin/visualiser",
+]
 
-[dependencies]
+resolver = "2"

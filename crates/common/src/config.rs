@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::fs;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ExperimentConfig {

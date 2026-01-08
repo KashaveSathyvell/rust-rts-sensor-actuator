@@ -46,7 +46,7 @@ pub async fn run_actuator_task(
 
         // Simulated actuation processing
         if config.processing_time_ns > 0 {
-            busy_spin_ns(config.processing_time_ns);
+            busy_spin_ns(Instant::now(), config.processing_time_ns);
         }
 
         // Deadline evaluation
@@ -71,9 +71,9 @@ pub async fn run_actuator_task(
 }
 
 /// True CPU burn for stress testing (intentional)
-fn busy_spin_ns(duration_ns: u64) {
+fn busy_spin_ns(start_time: Instant, duration_ns: u64) {
     let target = Duration::from_nanos(duration_ns);
-    while start.elapsed() < target {
+    while start_time.elapsed() < target {
         std::hint::spin_loop();
     }
 }

@@ -11,6 +11,8 @@ mod sensor;
 mod actuator;
 
 pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
+    let start_time = Instant::now();
+
     // Create a dedicated Tokio runtime for async benchmark
     let rt = Runtime::new().expect("Failed to create Tokio runtime");
 

@@ -12,7 +12,7 @@ pub async fn run_sensor_task(
     sender: mpsc::Sender<SensorData>,
     recorder: Arc<BenchmarkRecorder>,
     shutdown_flag: Arc<AtomicBool>,
-    start_time: Instant, // Shared experiment clock
+    start_time: Instant,
 ) {
     let period = Duration::from_millis(config.sensor_period_ms);
     let mut cycle_id: u64 = 0;
@@ -38,7 +38,7 @@ pub async fn run_sensor_task(
         // --- Simulated processing (CPU burn) ---
         let processing_start = Instant::now();
         if config.processing_time_ns > 0 {
-            busy_spin_ns(config.processing_time_ns);
+            busy_spin_ns(Instant::now(), config.processing_time_ns);
         }
         let processing_time_ns =
             processing_start.elapsed().as_nanos() as u64;
@@ -72,9 +72,9 @@ pub async fn run_sensor_task(
 }
 
 /// True CPU burn for stress testing (intentional)
-fn busy_spin_ns(duration_ns: u64) {
+fn busy_spin_ns(start_time: Instant, duration_ns: u64) {
     let target = Duration::from_nanos(duration_ns);
-    while start.elapsed() < target {
+    while start_time.elapsed() < target {
         std::hint::spin_loop();
     }
 }

@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::{BenchmarkRecorder, ExperimentConfig, SensorData};
 
@@ -15,6 +15,7 @@ pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
     let shared_resource = Arc::new(Mutex::new(()));
 
     let (sender, receiver) = mpsc::sync_channel::<SensorData>(100);
+    let start_time = Instant::now();
 
     let sensor_config = config.clone();
     let sensor_recorder = Arc::clone(&recorder);
@@ -25,6 +26,7 @@ pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
             sender,
             sensor_recorder,
             sensor_shutdown,
+            start_time,
         )
     });
 
@@ -39,6 +41,7 @@ pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
             actuator_recorder,
             actuator_resource,
             actuator_shutdown,
+            start_time,
         )
     });
 
