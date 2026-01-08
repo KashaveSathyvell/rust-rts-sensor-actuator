@@ -19,7 +19,9 @@ fn main() {
         .expect("Failed to save threaded CSV");
 
     println!("Running ASYNC experiment...");
-    let async_recorder = async_impl::run_experiment(config.clone());
+    let async_recorder = tokio::runtime::Runtime::new()
+    .unwrap()
+    .block_on(async_impl::run_experiment(config));
     async_recorder
         .save_to_csv("async_results.csv")
         .expect("Failed to save async CSV");
