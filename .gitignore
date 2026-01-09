@@ -1,1 +1,106 @@
-/target
+# Rust build artifacts
+target/
+debug/
+release/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+*~
+
+# Cursor IDE specific
+.cursor/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows specific
+*.stackdump
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Log files
+*.log
+logs/
+*.log.*
+
+# Test and benchmark results
+async_results.csv
+threaded_results.csv
+benchmark_results.csv
+*.csv
+
+# Criterion benchmark reports
+target/criterion/
+
+# Performance test data
+perf.data
+perf.data.old
+
+# Rust documentation
+doc/
+
+# Rust test coverage
+*.profraw
+*.profdata
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build scripts and cache
+.cache/
+.cargo/
+build.rs.bak
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Generated files
+*.rs.bk
+*.rs~
+
+# Flamegraph output (if using for profiling)
+flamegraph.svg
+
+# Tokio console output
+tokio-console.json
+
+# Application specific
+# If you have any application-specific temp files or caches, add them here
+temp/
+tmp/
+cache/
+
+# Documentation build artifacts
+book/
+docs/build/
+
+# CI/CD
+.github/workflows/*.log
+
+# Local development scripts
+scripts/local/

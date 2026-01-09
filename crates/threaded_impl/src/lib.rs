@@ -1,62 +1,133 @@
-use std::sync::atomic::{AtomicBool};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use common::{BenchmarkRecorder, ExperimentConfig, SharedDiagnostics};
+use common::{
+    ActuatorFeedback, ActuatorType, BenchmarkRecorder,
+    ExperimentConfig, SensorData, SharedDiagnostics,
+};
 
-mod sensor;
 mod actuator;
+mod sensor;
 
 pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
     let recorder = Arc::new(BenchmarkRecorder::new());
-    let diagnostics = Arc::new(SharedDiagnostics::default());
     let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let diagnostics = Arc::new(SharedDiagnostics::default());
+
+    // Sensor -> dispatcher
+    let (sensor_tx, dispatcher_rx) = mpsc::sync_channel::<SensorData>(100);
+
+    // Dispatcher -> actuators
+    let (gripper_tx, gripper_rx) = mpsc::sync_channel::<SensorData>(100);
+    let (motor_tx, motor_rx) = mpsc::sync_channel::<SensorData>(100);
+    let (stabilizer_tx, stabilizer_rx) = mpsc::sync_channel::<SensorData>(100);
+
+    // Feedback channel
+    let (feedback_tx, feedback_rx) = mpsc::sync_channel::<ActuatorFeedback>(100);
+
     let start_time = Instant::now();
 
-    let (sensor_tx, actuator_rx) = mpsc::sync_channel(100);
-    let (feedback_tx, feedback_rx) = mpsc::sync_channel(100);
+    // ---------------- SENSOR ----------------
+    {
+        let cfg = config.clone();
+        let rec = Arc::clone(&recorder);
+        let diag = Arc::clone(&diagnostics);
+        let shutdown = Arc::clone(&shutdown_flag);
+        let tx = sensor_tx;
+        let feedback_recv = feedback_rx;
 
-    let s_cfg = config.clone();
-    let s_rec = recorder.clone();
-    let s_diag = diagnostics.clone();
-    let s_shutdown = shutdown_flag.clone();
+        thread::spawn(move || {
+            sensor::run_sensor_thread(
+                cfg,
+                tx,
+                feedback_recv,
+                rec,
+                diag,
+                shutdown,
+                start_time,
+            );
+        });
+    }
 
-    let sensor = thread::spawn(move || {
-        sensor::run_sensor_thread(
-            s_cfg,
-            sensor_tx,
-            feedback_rx,
-            s_rec,
-            s_diag,
-            s_shutdown,
-            start_time,
-        );
-    });
+    // ---------------- DISPATCHER ----------------
+    {
+        let tx1 = gripper_tx.clone();
+        let tx2 = motor_tx.clone();
+        let tx3 = stabilizer_tx.clone();
 
-    let a_cfg = config.clone();
-    let a_rec = recorder.clone();
-    let a_diag = diagnostics.clone();
-    let a_shutdown = shutdown_flag.clone();
+        thread::spawn(move || {
+            while let Ok(data) = dispatcher_rx.recv() {
+                let _ = tx1.try_send(data);
+                let _ = tx2.try_send(data);
+                let _ = tx3.try_send(data);
+            }
+        });
+    }
 
-    let actuator = thread::spawn(move || {
-        actuator::run_actuator_thread(
-            a_cfg,
-            actuator_rx,
-            feedback_tx,
-            a_rec,
-            a_diag,
-            a_shutdown,
-            start_time,
-        );
-    });
+    // ---------------- ACTUATORS ----------------
+    spawn_actuator(
+        ActuatorType::Gripper,
+        Duration::from_millis(1),
+        config.clone(),
+        gripper_rx,
+        feedback_tx.clone(),
+        Arc::clone(&recorder),
+        Arc::clone(&shutdown_flag),
+        start_time,
+    );
 
+    spawn_actuator(
+        ActuatorType::Motor,
+        Duration::from_millis(2),
+        config.clone(),
+        motor_rx,
+        feedback_tx.clone(),
+        Arc::clone(&recorder),
+        Arc::clone(&shutdown_flag),
+        start_time,
+    );
+
+    spawn_actuator(
+        ActuatorType::Stabilizer,
+        Duration::from_micros(1500),
+        config.clone(),
+        stabilizer_rx,
+        feedback_tx,
+        Arc::clone(&recorder),
+        Arc::clone(&shutdown_flag),
+        start_time,
+    );
+
+    // ---------------- RUN ----------------
     thread::sleep(Duration::from_secs(config.duration_secs));
-    shutdown_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-
-    let _ = sensor.join();
-    let _ = actuator.join();
+    shutdown_flag.store(true, Ordering::Relaxed);
 
     recorder
+}
+
+fn spawn_actuator(
+    actuator_type: ActuatorType,
+    deadline: Duration,
+    config: ExperimentConfig,
+    receiver: mpsc::Receiver<SensorData>,
+    feedback_tx: mpsc::SyncSender<ActuatorFeedback>,
+    recorder: Arc<BenchmarkRecorder>,
+    shutdown: Arc<AtomicBool>,
+    start_time: Instant,
+) {
+    thread::spawn(move || {
+        actuator::run_actuator_thread(
+            actuator_type,
+            deadline,
+            config,
+            receiver,
+            feedback_tx,
+            recorder,
+            shutdown,
+            start_time,
+        );
+    });
 }
