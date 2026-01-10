@@ -4,3 +4,4 @@ sensor_period_ms = 10
 cpu_load_threads = 0
 mode = "baseline"
 processing_time_ns = 200_000
+enable_logging = true

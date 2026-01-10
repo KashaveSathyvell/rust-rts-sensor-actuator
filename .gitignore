@@ -1,1 +1,152 @@
-/target
+target/
+debug/
+release/
+
+# Cargo.lock - Generated file, typically not committed for libraries
+# Keep this commented if this is an application, uncomment if library
+Cargo.lock
+
+# Test and benchmark result files - DO NOT COMMIT
+async_results.csv
+threaded_results.csv
+*_results.csv
+*.csv
+
+# Criterion benchmark reports - DO NOT COMMIT  
+target/criterion/
+
+# IDE and editor files
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*.tmp
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows specific
+*.stackdump
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Log files
+*.log
+logs/
+*.log.*
+
+# Rust documentation
+doc/
+
+# Rust test coverage
+*.profraw
+*.profdata
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build scripts and cache
+.cache/
+.cargo/
+build.rs.bak
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Generated files
+*.rs.bk
+*.rs~
+
+# Flamegraph output (if using for profiling)
+flamegraph.svg
+
+# Tokio console output
+tokio-console.json
+
+# Application specific temp files
+temp/
+tmp/
+cache/
+
+# Documentation build artifacts
+book/
+docs/build/
+
+# CI/CD
+.github/workflows/*.log
+
+# Performance test data
+perf.data
+perf.data.old
+
+# Local development scripts
+scripts/local/
+
+# Test artifacts - DO NOT COMMIT
+test_output/
+test_results/
+*.test
+*_test.txt
+*_tests.txt
+
+# Benchmark artifacts - DO NOT COMMIT
+benchmark_*.txt
+benchmark_*.md
+*_benchmark.md
+
+# Debug and development files - DO NOT COMMIT
+debug_*.md
+debug*.md
+*_debug.md
+dev_*.md
+dev*.md
+*_dev.md
+
+# Analysis and verification files that are generated - DO NOT COMMIT
+*verification*.md
+*Verification*.md
+*_verification.md
+*analysis*.md
+*Analysis*.md
+*_analysis.md
+*checklist*.md
+*Checklist*.md
+*_checklist.md
+
+# Random/generated markdown files - DO NOT COMMIT
+random_*.md
+*random*.md
+*_random.md
+scratch*.md
+notes*.md
+todo*.md
+*_notes.md
+*_todo.md
+temp_*.md
+temp*.md
+*_temp.md
+*_draft.md
+*_backup.md
