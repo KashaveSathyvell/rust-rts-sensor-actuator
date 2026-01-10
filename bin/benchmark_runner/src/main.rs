@@ -113,7 +113,12 @@ fn main() {
     let mode = args.get(2).map(|s| s.as_str()).unwrap_or("both");
     let use_criterion = args.contains(&"--criterion".to_string());
 
-    let config = load_config(config_path).expect("Failed to load config");
+    let mut config = load_config(config_path).expect("Failed to load config");
+
+    // Disable logging during Criterion benchmarks for methodological validity
+    if use_criterion {
+        config.enable_logging = false;
+    }
 
     println!("========================================");
     println!("Real-Time Sensor-Actuator Benchmark");
@@ -125,6 +130,7 @@ fn main() {
     println!("Mode: {}", config.mode);
     if use_criterion {
         println!("Using Criterion for statistical analysis");
+        println!("Logging disabled for benchmark validity");
     }
     println!("========================================\n");
 

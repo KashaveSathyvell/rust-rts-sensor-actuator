@@ -9,6 +9,7 @@ pub struct ExperimentConfig {
     pub cpu_load_threads: usize,
     pub mode: String,
     pub processing_time_ns: u64, // NEW: Configurable busy-wait time
+    pub enable_logging: bool, // Controls println! statements for benchmark safety
 }
 
 pub fn load_config(path: &str) -> Result<ExperimentConfig, Box<dyn std::error::Error>> {

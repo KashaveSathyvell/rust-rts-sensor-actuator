@@ -83,6 +83,13 @@ pub fn run_actuator_thread(
 ) {
     let mut pid = PidController::new(1.0, 0.1, 0.01);
     let mut error_threshold = 5.0; // Dynamic threshold for recalibration
+    let mut cycle_count = 0u64;
+
+    let init_time = start_time.elapsed().as_secs_f64();
+    if config.enable_logging {
+        println!("[{:>8}] [SYSTEM] {:?} actuator initialized - Deadline: {:.1}ms",
+                 format!("{:.3}s", init_time), actuator_type, deadline.as_millis() as f64);
+    }
 
     while !shutdown_flag.load(Ordering::Relaxed) {
         let data = match receiver.recv_timeout(Duration::from_millis(50)) {
@@ -90,6 +97,8 @@ pub fn run_actuator_thread(
             Err(_) => continue,
         };
 
+        cycle_count += 1;
+        let timestamp_ns = start_time.elapsed().as_nanos() as u64;
         let cycle_start = Instant::now();
 
         let error = -data.position;
@@ -97,12 +106,24 @@ pub fn run_actuator_thread(
 
         // Determine actuator status based on error magnitude
         let status = if error.abs() > 10.0 {
+            if config.enable_logging {
+                let elapsed = start_time.elapsed().as_secs_f64();
+                println!("[{:>8}] [EMERGENCY] {:?}: Entering emergency mode - Error: {:.2} (>10.0 threshold)",
+                         format!("{:.3}s", elapsed), actuator_type, error.abs());
+            }
             ActuatorStatus::Emergency
         } else if error.abs() > error_threshold {
             ActuatorStatus::Correcting
         } else {
             ActuatorStatus::Normal
         };
+
+        // Log actuator processing more frequently for demonstration
+        if config.enable_logging && cycle_count % 10 == 0 {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            println!("[{:>8}] {:?}: Processed cycle #{:<4} - Error: {:.2}, Control: {:.2} ({:?})",
+                     format!("{:.3}s", elapsed), actuator_type, data.id, error, control, status);
+        }
 
         // Dynamic recalibration: adjust threshold based on recent performance
         if error.abs() < 2.0 {
@@ -113,6 +134,22 @@ pub fn run_actuator_thread(
 
         let processing_elapsed = cycle_start.elapsed();
         let deadline_met = processing_elapsed <= deadline;
+        let processing_ms = processing_elapsed.as_nanos() as f64 / 1_000_000.0;
+        let deadline_ms = deadline.as_nanos() as f64 / 1_000_000.0;
+
+        // Log processing results more frequently
+        if config.enable_logging && cycle_count % 10 == 0 {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            println!("[{:>8}] {:?}: Processed {} (latency: {:.2}ms, deadline: {:.1}ms)",
+                     format!("{:.3}s", elapsed), actuator_type, if deadline_met { "✓" } else { "✗" }, processing_ms, deadline_ms);
+        }
+
+        // Log deadline misses with enhanced formatting
+        if config.enable_logging && !deadline_met {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            println!("[{:>8}] [DEADLINE] {:?}: Processing missed - {:.2}ms > {:.1}ms (cycle #{}) ✗",
+                     format!("{:.3}s", elapsed), actuator_type, processing_ms, deadline_ms, data.id);
+        }
 
         // Measure lock wait time
         let lock_start = Instant::now();
@@ -133,15 +170,22 @@ pub fn run_actuator_thread(
 
         // Send feedback within 0.5ms deadline
         let feedback_start = Instant::now();
-        let _feedback_sent = feedback_tx.try_send(ActuatorFeedback {
+        let feedback = ActuatorFeedback {
             sensor_id: data.id,
             status,
             control_output: control,
             error,
             timestamp: start_time.elapsed().as_nanos() as u64,
-        }).is_ok();
+        };
+        let feedback_sent = feedback_tx.try_send(feedback).is_ok();
         let feedback_time = feedback_start.elapsed();
         let feedback_deadline_met = feedback_time.as_nanos() as u64 <= FEEDBACK_DEADLINE_NS;
+
+        if config.enable_logging && cycle_count % 20 == 0 {
+            let feedback_us = feedback_time.as_nanos() as f64 / 1000.0;
+            println!("[{:012}] {:?}: Feedback sent {} (latency: {:.2}μs, deadline: 500μs)",
+                    timestamp_ns, actuator_type, if feedback_sent && feedback_deadline_met { "✓" } else { "✗" }, feedback_us);
+        }
 
         // Log if feedback deadline is missed (for analysis)
         if !feedback_deadline_met {

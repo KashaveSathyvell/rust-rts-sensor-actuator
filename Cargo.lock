@@ -2356,6 +2356,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "real-time-sensor-actuator"
+version = "0.1.0"
+dependencies = [
+ "async_impl",
+ "common",
+ "threaded_impl",
+ "tokio",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
