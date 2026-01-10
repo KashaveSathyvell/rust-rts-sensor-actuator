@@ -128,7 +128,7 @@ fn run_realtime_dashboard() {
     // We can't directly call the visualiser's main function from here,
     // so we'll execute it as a subprocess
     match std::process::Command::new("cargo")
-        .args(&["run", "--release", "--bin", "visualiser", config_path, mode])
+        .args(&["run", "--release", "-p", "visualiser", "--", config_path, mode])
         .status() {
         Ok(status) if status.success() => {
             println!("Dashboard closed successfully.");
