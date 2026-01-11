@@ -98,7 +98,7 @@ pub fn run_sensor_thread(
         const TRANSMISSION_DEADLINE_NS: u64 = 100_000; // 0.1 ms
         let transmission_deadline_met = transmission_time_ns <= TRANSMISSION_DEADLINE_NS;
 
-        if cycle_id % 20 == 0 {
+        if config.enable_logging && cycle_id % 20 == 0 {
             let transmission_us = transmission_time_ns as f64 / 1000.0;
             println!("[{:012}] SENSOR: Transmitted to dispatcher {} (latency: {:.2}μs, deadline: 100μs)",
                     timestamp_ns, if transmission_success { "✓" } else { "✗" }, transmission_us);

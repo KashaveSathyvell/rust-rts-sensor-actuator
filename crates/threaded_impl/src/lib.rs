@@ -70,8 +70,10 @@ pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
             let mut cycle_count = 0u64;
             let dispatcher_start = Instant::now();
             if dispatcher_config.enable_logging {
-                println!("[{:>8}] [SYSTEM] Threaded dispatcher initialized - routing sensor data to 3 actuators",
-                         format!("{:.3}s", dispatcher_start.duration_since(start_time).as_secs_f64()));
+                if config.enable_logging {
+                    println!("[{:>8}] [SYSTEM] Threaded dispatcher initialized - routing sensor data to 3 actuators",
+                             format!("{:.3}s", dispatcher_start.duration_since(start_time).as_secs_f64()));
+                }
             }
 
             while let Ok(data) = dispatcher_rx.recv() {
@@ -83,19 +85,25 @@ pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
                 // Log dispatcher activity more frequently for demonstration
                 if dispatcher_config.enable_logging && cycle_count % 5 == 0 {
                     let elapsed = dispatcher_start.duration_since(start_time).as_secs_f64();
-                    println!("[{:>8}] DISPATCHER: Routed cycle #{:<4} to actuators (G:{:?}, M:{:?}, S:{:?})",
-                            format!("{:.3}s", elapsed), cycle_count, gripper_sent, motor_sent, stabilizer_sent);
+                    if config.enable_logging {
+                        println!("[{:>8}] DISPATCHER: Routed cycle #{:<4} to actuators (G:{:?}, M:{:?}, S:{:?})",
+                                format!("{:.3}s", elapsed), cycle_count, gripper_sent, motor_sent, stabilizer_sent);
+                    }
                 }
 
                 // Log transmission failures
                 if dispatcher_config.enable_logging && (!gripper_sent || !motor_sent || !stabilizer_sent) {
                     let elapsed = dispatcher_start.duration_since(start_time).as_secs_f64();
-                    println!("[{:>8}] [WARNING] DISPATCHER: Transmission failed - G:{:?}, M:{:?}, S:{:?} (cycle #{})",
-                            format!("{:.3}s", elapsed), gripper_sent, motor_sent, stabilizer_sent, cycle_count);
+                    if config.enable_logging {
+                        println!("[{:>8}] [WARNING] DISPATCHER: Transmission failed - G:{:?}, M:{:?}, S:{:?} (cycle #{})",
+                                format!("{:.3}s", elapsed), gripper_sent, motor_sent, stabilizer_sent, cycle_count);
+                    }
                 }
             }
             if dispatcher_config.enable_logging {
-                println!("[SYSTEM] Threaded dispatcher shutting down");
+                if config.enable_logging {
+                    println!("[SYSTEM] Threaded dispatcher shutting down");
+                }
             }
         });
     }
@@ -159,8 +167,10 @@ pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
                     (new_cycles - missed as u64) as f64 / new_cycles as f64 * 100.0
                 } else { 100.0 };
 
-                println!("[PERF] Threaded throughput: {:.1} cycles/sec, Recent compliance: {:.1}% ({}/{} cycles met)",
-                        throughput, compliance_rate, new_cycles - missed as u64, new_cycles);
+                if config.enable_logging {
+                    println!("[PERF] Threaded throughput: {:.1} cycles/sec, Recent compliance: {:.1}% ({}/{} cycles met)",
+                            throughput, compliance_rate, new_cycles - missed as u64, new_cycles);
+                }
                 last_cycle_count = current_cycles;
             }
         }
