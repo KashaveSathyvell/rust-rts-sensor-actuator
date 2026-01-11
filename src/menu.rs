@@ -9,9 +9,10 @@ pub fn show_menu() {
     println!("2. Async Implementation Demo");
     println!("3. Benchmark Mode (Async vs Threaded)");
     println!("4. Real-Time Dashboard");
-    println!("5. Exit");
+    println!("5. Statistical Benchmark Mode (Criterion)");
+    println!("6. Exit");
     println!("===========================================");
-    print!("Choice (1-5): ");
+    print!("Choice (1-6): ");
     io::stdout().flush().unwrap();
 }
 

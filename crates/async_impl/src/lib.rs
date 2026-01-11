@@ -102,21 +102,27 @@ pub async fn run_experiment_with_dashboard(
                 // Log dispatcher activity more frequently for demonstration
                 if dispatcher_config.enable_logging && cycle_count % 5 == 0 {
                     let elapsed = dispatcher_start.duration_since(start_time).as_secs_f64();
-                    println!("[{:>8}] DISPATCHER: Routed cycle #{:<4} to actuators (G:{:?}, M:{:?}, S:{:?})",
-                            format!("{:.3}s", elapsed), cycle_count, gripper_sent, motor_sent, stabilizer_sent);
+                    if config.enable_logging {
+                        println!("[{:>8}] DISPATCHER: Routed cycle #{:<4} to actuators (G:{:?}, M:{:?}, S:{:?})",
+                                format!("{:.3}s", elapsed), cycle_count, gripper_sent, motor_sent, stabilizer_sent);
+                    }
                 }
 
                 // Log transmission failures
                 if dispatcher_config.enable_logging && (!gripper_sent || !motor_sent || !stabilizer_sent) {
                     let elapsed = dispatcher_start.duration_since(start_time).as_secs_f64();
-                    println!("[{:>8}] [ERROR] DISPATCHER: Failed to route cycle #{} - channels full",
-                            format!("{:.3}s", elapsed), cycle_count);
+                    if config.enable_logging {
+                        println!("[{:>8}] [ERROR] DISPATCHER: Failed to route cycle #{} - channels full",
+                                format!("{:.3}s", elapsed), cycle_count);
+                    }
                 }
             }
 
             let total_time = dispatcher_start.elapsed().as_secs_f64();
-            println!("[{:>8}] [SYSTEM] Dispatcher shutdown - processed {} cycles in {:.2}s",
-                     format!("{:.3}s", total_time), cycle_count, total_time);
+            if config.enable_logging {
+                println!("[{:>8}] [SYSTEM] Dispatcher shutdown - processed {} cycles in {:.2}s",
+                         format!("{:.3}s", total_time), cycle_count, total_time);
+            }
         });
     }
 
@@ -184,8 +190,10 @@ pub async fn run_experiment_with_dashboard(
                     (new_cycles - missed as u64) as f64 / new_cycles as f64 * 100.0
                 } else { 100.0 };
                 if perf_config.enable_logging {
-                    println!("[PERF] Throughput: {:.1} cycles/sec, Recent compliance: {:.1}% ({}/{} cycles met)",
-                            throughput, compliance_rate, new_cycles - missed as u64, new_cycles);
+                    if config.enable_logging {
+                        println!("[PERF] Throughput: {:.1} cycles/sec, Recent compliance: {:.1}% ({}/{} cycles met)",
+                                throughput, compliance_rate, new_cycles - missed as u64, new_cycles);
+                    }
                 }
                 cycle_count = current_cycles;
             }

@@ -15,11 +15,12 @@ fn main() {
             Ok(2) => run_async_demo(),
             Ok(3) => run_benchmark_comparison(),
             Ok(4) => run_realtime_dashboard(),
-            Ok(5) => {
+            Ok(5) => run_criterion_benchmark(),
+            Ok(6) => {
                 println!("Goodbye!");
                 break;
             }
-            _ => println!("Invalid choice. Please select 1-5."),
+            _ => println!("Invalid choice. Please select 1-6."),
         }
     }
 }
@@ -139,6 +140,46 @@ fn run_realtime_dashboard() {
         Err(e) => {
             println!("Failed to launch dashboard: {}", e);
             println!("Make sure you have the visualiser binary available.");
+        }
+    }
+
+    menu::wait_for_enter();
+}
+
+fn run_criterion_benchmark() {
+    println!("\n=== Running Statistical Benchmark Mode (Criterion) ===");
+    println!("This will run detailed statistical analysis using Criterion.");
+    println!("Each benchmark takes about 30 seconds to complete.");
+    println!("Results will be saved to target/criterion/ directory.\n");
+
+    let config_path = "configs/experiment_baseline.toml";
+    let mode = "both";
+
+    println!("Configuration:");
+    println!("- Config: {}", config_path);
+    println!("- Mode: {}", mode);
+    println!("- Using Criterion for statistical analysis");
+    println!("\nStarting benchmarks... (this may take a few minutes)\n");
+
+    match std::process::Command::new("cargo")
+        .args(&["run", "-p", "benchmark_runner", "--", config_path, mode, "--criterion"])
+        .status() {
+        Ok(status) if status.success() => {
+            println!("\n========================================");
+            println!("Statistical benchmarks completed successfully!");
+            println!("========================================");
+            println!("HTML reports available in: target/criterion/");
+            println!("- async_experiment/report/index.html");
+            println!("- threaded_experiment/report/index.html");
+            println!("\nOpen the HTML files in your browser to view detailed");
+            println!("statistical analysis, performance distributions, and charts.");
+        }
+        Ok(status) => {
+            println!("Benchmark runner exited with status: {}", status);
+        }
+        Err(e) => {
+            println!("Failed to launch benchmark runner: {}", e);
+            println!("Make sure you're running from the project root directory.");
         }
     }
 

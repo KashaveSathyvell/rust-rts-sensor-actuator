@@ -1,4 +1,4 @@
-use common::config::load_config;
+use common::config::{load_config, ExperimentConfig};
 use common::metrics::CycleResult;
 use criterion::{black_box, Criterion};
 use std::collections::HashMap;
@@ -73,10 +73,8 @@ fn analyze_results_detailed(results: &[CycleResult], name: &str) {
     }
 }
 
-fn benchmark_threaded(c: &mut Criterion) {
-    let config_path = env::var("BENCHMARK_CONFIG").unwrap_or_else(|_| "configs/experiment_baseline.toml".to_string());
-    let config = load_config(&config_path).expect("Failed to load config");
-
+fn benchmark_threaded(c: &mut Criterion, config: &ExperimentConfig) {
+    let config = config.clone();
     c.bench_function("threaded_experiment", |b| {
         b.iter(|| {
             let recorder = threaded_impl::run_experiment(black_box(config.clone()));
@@ -85,9 +83,8 @@ fn benchmark_threaded(c: &mut Criterion) {
     });
 }
 
-fn benchmark_async(c: &mut Criterion) {
-    let config_path = env::var("BENCHMARK_CONFIG").unwrap_or_else(|_| "configs/experiment_baseline.toml".to_string());
-    let config = load_config(&config_path).expect("Failed to load config");
+fn benchmark_async(c: &mut Criterion, config: &ExperimentConfig) {
+    let config = config.clone();
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     c.bench_function("async_experiment", |b| {
@@ -142,12 +139,12 @@ fn main() {
 
         if mode == "threaded" || mode == "both" {
             println!("Running THREADED statistical benchmarks...");
-            benchmark_threaded(&mut criterion);
+            benchmark_threaded(&mut criterion, &config);
         }
 
         if mode == "async" || mode == "both" {
             println!("\nRunning ASYNC statistical benchmarks...");
-            benchmark_async(&mut criterion);
+            benchmark_async(&mut criterion, &config);
         }
 
         println!("\n========================================");
