@@ -1,8 +1,13 @@
 use common::config::{load_config, ExperimentConfig};
 use common::metrics::CycleResult;
+use common::sync_strategies::{SyncStrategy, MutexStrategy, RwLockStrategy, AtomicStrategy};
+use common::ActuatorType;
 use criterion::{black_box, Criterion};
 use std::collections::HashMap;
 use std::env;
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 fn analyze_results_detailed(results: &[CycleResult], name: &str) {
     if results.is_empty() {
@@ -95,20 +100,180 @@ fn benchmark_async(c: &mut Criterion, config: &ExperimentConfig) {
     });
 }
 
+// Synchronization strategy benchmarks
+fn benchmark_sync_strategies(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sync_strategies");
+    group.sample_size(50);
+    group.measurement_time(Duration::from_secs(10));
+
+    // Benchmark MutexStrategy
+    group.bench_function("MutexStrategy", |b| {
+        b.iter_batched(
+            || create_sync_strategy("mutex"),
+            |strategy| benchmark_sync_workload(black_box(strategy)),
+            criterion::BatchSize::SmallInput
+        );
+    });
+
+    // Benchmark RwLockStrategy
+    group.bench_function("RwLockStrategy", |b| {
+        b.iter_batched(
+            || create_sync_strategy("rwlock"),
+            |strategy| benchmark_sync_workload(black_box(strategy)),
+            criterion::BatchSize::SmallInput
+        );
+    });
+
+    // Benchmark AtomicStrategy
+    group.bench_function("AtomicStrategy", |b| {
+        b.iter_batched(
+            || create_sync_strategy("atomic"),
+            |strategy| benchmark_sync_workload(black_box(strategy)),
+            criterion::BatchSize::SmallInput
+        );
+    });
+
+    group.finish();
+}
+
+fn create_sync_strategy(strategy_type: &str) -> Arc<dyn SyncStrategy> {
+    match strategy_type {
+        "mutex" => Arc::new(MutexStrategy::new()),
+        "rwlock" => Arc::new(RwLockStrategy::new()),
+        "atomic" => Arc::new(AtomicStrategy::new()),
+        _ => panic!("Unknown strategy type"),
+    }
+}
+
+fn benchmark_sync_workload(strategy: Arc<dyn SyncStrategy>) {
+    const NUM_THREADS: usize = 4; // Simulate sensor + 3 actuators
+    const OPERATIONS_PER_THREAD: usize = 1000;
+
+    let mut handles = vec![];
+
+    for thread_id in 0..NUM_THREADS {
+        let strategy_clone = Arc::clone(&strategy);
+
+        let handle = thread::spawn(move || {
+            for i in 0..OPERATIONS_PER_THREAD {
+                let cycle_id = thread_id * OPERATIONS_PER_THREAD + i;
+
+                // Create a realistic CycleResult
+                let result = CycleResult {
+                    cycle_id: cycle_id as u64,
+                    mode: "benchmark".to_string(),
+                    actuator: if thread_id > 0 {
+                        Some(match thread_id {
+                            1 => ActuatorType::Gripper,
+                            2 => ActuatorType::Motor,
+                            _ => ActuatorType::Stabilizer,
+                        })
+                    } else {
+                        None // Sensor thread
+                    },
+                    total_latency_ns: (cycle_id % 1000) as u64 + 1000, // Some variance
+                    processing_time_ns: 50 + (cycle_id % 100) as u64, // Processing time
+                    lock_wait_ns: (cycle_id % 50) as u64, // Lock contention
+                    deadline_met: cycle_id % 100 != 0, // ~1% deadline misses
+                    lateness_ns: if cycle_id % 100 == 0 { 500 } else { 0 }, // Occasional lateness
+                };
+
+                // Record the result (write operation)
+                strategy_clone.record(result);
+
+                // Occasionally perform read operations to simulate dashboard/monitoring
+                if i % 100 == 0 {
+                    let _missed = strategy_clone.get_missed_deadlines();
+                    let _count = strategy_clone.get_results_count();
+                }
+            }
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+}
+
+fn run_sync_strategy_csv_benchmarks() {
+    println!("Running Synchronization Strategy CSV Benchmarks...");
+    println!("This will generate CSV files for report analysis.\n");
+
+    let strategies = vec![
+        ("MutexStrategy", create_sync_strategy("mutex")),
+        ("RwLockStrategy", create_sync_strategy("rwlock")),
+        ("AtomicStrategy", create_sync_strategy("atomic")),
+    ];
+
+    for (name, strategy) in strategies {
+        println!("Benchmarking {}...", name);
+
+        let start = Instant::now();
+        benchmark_sync_workload(Arc::clone(&strategy));
+        let duration = start.elapsed();
+
+        let results = strategy.get_results();
+        let missed = strategy.get_missed_deadlines();
+
+        println!("  Completed in {:.2}ms", duration.as_millis());
+        println!("  Recorded {} results, {} missed deadlines", results.len(), missed);
+
+        // Save to CSV
+        let filename = format!("{}_benchmark.csv", name.to_lowercase());
+        strategy.save_to_csv(&filename).expect("Failed to save CSV");
+
+        // Also save detailed analysis
+        analyze_sync_strategy_performance(&results, name);
+    }
+
+    println!("\n========================================");
+    println!("Sync Strategy CSV Benchmarks Complete!");
+    println!("========================================");
+    println!("Generated files:");
+    println!("  - mutexstrategy_benchmark.csv");
+    println!("  - rwlockstrategy_benchmark.csv");
+    println!("  - atomicstrategy_benchmark.csv");
+}
+
+fn analyze_sync_strategy_performance(results: &[CycleResult], strategy_name: &str) {
+    if results.is_empty() {
+        return;
+    }
+
+    let total_operations = results.len();
+    let avg_processing = results.iter().map(|r| r.processing_time_ns).sum::<u64>() as f64 / total_operations as f64;
+    let avg_lock_wait = results.iter().map(|r| r.lock_wait_ns).sum::<u64>() as f64 / total_operations as f64;
+    let max_lock_wait = results.iter().map(|r| r.lock_wait_ns).max().unwrap_or(0);
+    let missed_deadlines = results.iter().filter(|r| !r.deadline_met).count();
+
+    println!("  {} Performance Analysis:", strategy_name);
+    println!("    Average processing time: {:.1} ns", avg_processing);
+    println!("    Average lock wait time: {:.1} ns", avg_lock_wait);
+    println!("    Maximum lock wait time: {} ns", max_lock_wait);
+    println!("    Deadline compliance: {:.2}%", (total_operations - missed_deadlines) as f64 / total_operations as f64 * 100.0);
+}
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: benchmark_runner <config_file> [threaded|async|both] [--criterion]");
-        eprintln!("Example: benchmark_runner configs/experiment_baseline.toml both");
-        eprintln!("Example: benchmark_runner configs/experiment_baseline.toml both --criterion");
+        eprintln!("Usage: benchmark_runner <config_file> [threaded|async|both|sync] [--criterion]");
+        eprintln!("Examples:");
+        eprintln!("  benchmark_runner configs/experiment_baseline.toml both              # Normal experiments");
+        eprintln!("  benchmark_runner configs/experiment_baseline.toml both --criterion # Statistical analysis");
+        eprintln!("  benchmark_runner configs/experiment_baseline.toml sync             # Sync strategy CSV benchmarks");
+        eprintln!("  benchmark_runner configs/experiment_baseline.toml sync --criterion # Sync strategy Criterion benchmarks");
         std::process::exit(1);
     }
 
     let config_path = &args[1];
     let mode = args.get(2).map(|s| s.as_str()).unwrap_or("both");
     let use_criterion = args.contains(&"--criterion".to_string());
+    let sync_only = mode == "sync";
 
     let mut config = load_config(config_path).expect("Failed to load config");
 
@@ -137,6 +302,19 @@ fn main() {
             .sample_size(20)
             .measurement_time(std::time::Duration::from_secs(30));
 
+        if sync_only {
+            println!("Running SYNCHRONIZATION STRATEGY statistical benchmarks...");
+            benchmark_sync_strategies(&mut criterion);
+
+            println!("\n========================================");
+            println!("Sync Strategy Benchmarking Complete!");
+            println!("========================================");
+            println!("HTML reports available in: target/criterion/sync_strategies/");
+            println!("This benchmark compares MutexStrategy vs RwLockStrategy vs AtomicStrategy");
+            println!("under realistic multi-threaded contention patterns.");
+            return;
+        }
+
         if mode == "threaded" || mode == "both" {
             println!("Running THREADED statistical benchmarks...");
             benchmark_threaded(&mut criterion, &config);
@@ -151,6 +329,9 @@ fn main() {
         println!("Criterion statistical analysis complete!");
         println!("Check the target/criterion directory for detailed HTML reports.");
         println!("========================================");
+    } else if sync_only {
+        run_sync_strategy_csv_benchmarks();
+        return;
     } else {
         // Run normal experiments
         if mode == "threaded" || mode == "both" {
