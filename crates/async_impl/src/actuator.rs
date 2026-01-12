@@ -47,7 +47,8 @@ pub async fn run_actuator_task(
         let error = -data.position;
         let control = pid.compute(error, config.sensor_period_ms as f64 / 1000.0);
 
-        // Determine actuator status based on error magnitude
+        // Emergency threshold at ±10.0 units - picked as safety limit beyond which
+        // system is considered failed rather than just degraded. Hard real-time principle
         let status = if error.abs() > 10.0 {
             if config.enable_logging {
                 let elapsed = start_time.elapsed().as_secs_f64();

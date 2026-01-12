@@ -31,6 +31,9 @@ pub async fn run_sensor_task(
     let mut current_filter_window = FILTER_WINDOW;
     let mut temperature = 25.0;
 
+    // Async sensor loop - uses tokio::sleep_until for precise timing control
+    // Stops drift from piling up unlike std::thread::sleep in the threaded version
+    // Main architecture difference that keeps timing stable long-term
     while !shutdown.load(Ordering::Relaxed) {
         let cycle_start = Instant::now();
         let expected = next_tick;
@@ -41,7 +44,8 @@ pub async fn run_sensor_task(
         let now = Instant::now();
         let timestamp_ns = now.duration_since(start_time).as_nanos() as u64;
 
-        // Generate realistic sensor data with variations
+        // Deterministic data generation using sine waves - no random numbers to ensure
+        // reproducable benchmarks across runs. Went with this over random for actual science
         let raw_force = 50.0 + (cycle_id as f64 * 0.1).sin() * 10.0 + (cycle_id as f64 * 0.05).cos() * 5.0;
         position_base += (cycle_id as f64 * 0.02).sin() * 0.1;
         temperature += (cycle_id as f64 * 0.01).sin() * 0.5;

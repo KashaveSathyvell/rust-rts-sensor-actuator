@@ -9,6 +9,8 @@ use common::{
 };
 use common::metrics::CycleResult;
 
+// Filter window starts at 5 samples - kinda balances noise reduction with staying responsive
+// Max 10 for when things get really noisy, min 3 to keep it snappy
 const FILTER_WINDOW: usize = 5;
 const MAX_FILTER_WINDOW: usize = 10;
 const MIN_FILTER_WINDOW: usize = 3;
@@ -30,10 +32,13 @@ pub fn run_sensor_thread(
 
     let mut force_hist = Vec::with_capacity(FILTER_WINDOW);
 
+    // Main sensor loop - uses std::thread::sleep which can drift on general-purpose OS
+    // Picked this over busy-waiting to save CPU, even though timing gets messed up
     while !shutdown_flag.load(Ordering::Relaxed) {
         let expected = next_tick;
         next_tick += period;
 
+        // Simple sleep approach - will acumulate timing errors over time
         if Instant::now() < expected {
             thread::sleep(expected - Instant::now());
         }
@@ -58,6 +63,8 @@ pub fn run_sensor_thread(
         let filtered_force =
             force_hist.iter().sum::<f64>() / force_hist.len() as f64;
 
+        // Anomaly detection at 80N threshold - picked this as a reasonable safety limit for gripper force
+        // Could be lower but didn't want false alarms from normal variations
         let anomaly = filtered_force.abs() > 80.0;
         if anomaly {
             diagnostics.record_anomaly();
@@ -90,7 +97,8 @@ pub fn run_sensor_thread(
         const PROCESSING_DEADLINE_NS: u64 = 200_000; // 0.2 ms
         let processing_deadline_met = processing_time_ns <= PROCESSING_DEADLINE_NS;
 
-        // Measure transmission time
+        // Measure transmission time - using bounded channel to prevent memory exhaustion
+        // Capacity of 100 picked as reasonable buffer for timing variations
         let transmission_start = Instant::now();
         let transmission_success = sender.send(data).is_ok();
         let transmission_time = transmission_start.elapsed();
@@ -174,16 +182,19 @@ pub fn run_sensor_thread(
                 }
             }
 
-            // Dynamic recalibration based on actuator feedback
+            // Dynamic filter adjustment - trades speed for stability based on actuator feedback
+            // Error > 5.0 means system unstable, so increase filtering (slower but smoother)
+            // Error < 1.0 means system stable, so reduce filtering (faster response)
+            // This adaptive approach chosen over fixed filtering to optimize performance
             if feedback.error.abs() > 5.0 {
-                // Increase filter window size for better noise reduction when errors are high
+                // Increase filter window size -> better noise reduction when errors high
                 current_filter_window = (current_filter_window + 1).min(MAX_FILTER_WINDOW);
                 force_hist.resize(current_filter_window, 0.0);
                 if config.enable_logging && cycle_id % 20 == 0 {
                     println!("[{:012}] RECOVERY: Increased filter window to {} for better noise reduction", timestamp_ns, current_filter_window);
                 }
             } else if feedback.error.abs() < 1.0 {
-                // Reduce filter window size for faster response when system is stable
+                // Reduce filter window size -> faster response when system stable
                 current_filter_window = (current_filter_window - 1).max(MIN_FILTER_WINDOW);
                 force_hist.resize(current_filter_window, 0.0);
                 if config.enable_logging && cycle_id % 20 == 0 {

@@ -22,7 +22,8 @@ pub struct MetricsSnapshot {
     pub lateness_ns: i64,
 }
 
-/// Thread-safe dashboard data buffer
+/// Thread-safe buffer using Arc<Mutex<>> - picked over channels to allow
+/// multiple consumers (dashboard + logging) without blocking real-time loops
 #[derive(Clone)]
 pub struct DashboardBuffer {
     data: Arc<Mutex<Vec<DashboardData>>>,
@@ -65,6 +66,7 @@ impl DashboardBuffer {
         self.data.lock().unwrap().len()
     }
 }
+
 
 
 

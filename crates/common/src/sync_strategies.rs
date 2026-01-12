@@ -13,7 +13,8 @@ pub trait SyncStrategy: Send + Sync {
     fn save_to_csv(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-/// Strategy 1: Mutex-based synchronization
+/// Strategy 1: Mutex-based synchronization - went with this for its simplicity and
+/// fairness in high-contention write-heavy scenarios like logging results
 #[derive(Clone)]
 pub struct MutexStrategy {
     results: Arc<Mutex<Vec<CycleResult>>>,
@@ -74,7 +75,8 @@ impl SyncStrategy for MutexStrategy {
     }
 }
 
-/// Strategy 2: RwLock-based synchronization (allows concurrent reads)
+/// Strategy 2: RwLock-based synchronization - allows concurrent reads but
+/// overhead from reader count management killed performance in write-heavy workloads
 #[derive(Clone)]
 pub struct RwLockStrategy {
     results: Arc<RwLock<Vec<CycleResult>>>,
@@ -135,9 +137,9 @@ impl SyncStrategy for RwLockStrategy {
     }
 }
 
-/// Strategy 3: Lock-free atomic-based approach (for simple counters)
-/// Note: Full lock-free recording requires more complex structures (e.g., lock-free queues)
-/// This is a simplified version that uses atomics for counters
+/// Strategy 3: Hybrid atomic+mutex approach - atomics for simple counters,
+/// mutex for complex data structures. Picked this to show lock-free perks where possible
+/// but admit full lock-free data recording is a pain
 #[derive(Clone)]
 pub struct AtomicStrategy {
     results: Arc<Mutex<Vec<CycleResult>>>, // Still need mutex for Vec, but minimize contention

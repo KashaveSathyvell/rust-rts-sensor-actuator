@@ -100,7 +100,6 @@ fn benchmark_async(c: &mut Criterion, config: &ExperimentConfig) {
     });
 }
 
-// Synchronization strategy benchmarks
 fn benchmark_sync_strategies(c: &mut Criterion) {
     let mut group = c.benchmark_group("sync_strategies");
     group.sample_size(50);

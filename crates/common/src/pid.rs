@@ -24,7 +24,8 @@ impl PidController {
     }
 
     pub fn compute(&mut self, error: f64, dt: f64) -> f64 {
-        // Integral with simple anti-windup
+        // Anti-windup clamping at ±100 picked to prevent integral runaway during
+        // sustained errors (like stuck actuator) while still having enough authority
         self.integral += error * dt;
         self.integral = self.integral.clamp(-100.0, 100.0);
 

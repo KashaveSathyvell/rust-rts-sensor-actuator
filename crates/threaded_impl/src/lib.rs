@@ -82,7 +82,6 @@ pub fn run_experiment(config: ExperimentConfig) -> Arc<BenchmarkRecorder> {
                 let motor_sent = tx2.try_send(data).is_ok();
                 let stabilizer_sent = tx3.try_send(data).is_ok();
 
-                // Log dispatcher activity more frequently for demonstration
                 if dispatcher_config.enable_logging && cycle_count % 5 == 0 {
                     let elapsed = dispatcher_start.duration_since(start_time).as_secs_f64();
                     if config.enable_logging {
