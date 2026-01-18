@@ -2,6 +2,8 @@ use common::config::{load_config, ExperimentConfig};
 use common::metrics::CycleResult;
 use common::sync_strategies::{SyncStrategy, MutexStrategy, RwLockStrategy, AtomicStrategy};
 use common::ActuatorType;
+use threaded_impl;
+use async_impl;
 use criterion::{black_box, Criterion};
 use std::collections::HashMap;
 use std::env;

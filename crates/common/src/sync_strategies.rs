@@ -1,21 +1,17 @@
-use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
-use std::hint::black_box;
+use std::sync::{Arc, Mutex, RwLock};
 use crate::metrics::CycleResult;
 
-/// Synchronization strategy trait for benchmarking different approaches
+/// Trait for synchronization strategies used in benchmarking
 pub trait SyncStrategy: Send + Sync {
     fn record(&self, result: CycleResult);
+    fn get_results(&self) -> Vec<CycleResult>;
     fn get_missed_deadlines(&self) -> usize;
     fn get_results_count(&self) -> usize;
-    fn get_results(&self) -> Vec<CycleResult>;
     fn save_to_csv(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-/// Strategy 1: Mutex-based synchronization - went with this for its simplicity and
-/// fairness in high-contention write-heavy scenarios like logging results
-#[derive(Clone)]
+/// Mutex-based synchronization strategy
 pub struct MutexStrategy {
     results: Arc<Mutex<Vec<CycleResult>>>,
     missed_deadlines: Arc<AtomicUsize>,
@@ -32,23 +28,16 @@ impl MutexStrategy {
 
 impl SyncStrategy for MutexStrategy {
     fn record(&self, result: CycleResult) {
-        // Measure lock acquisition latency - time from before lock() until lock is acquired
-        let lock_start = Instant::now();
-
         if let Ok(mut data) = self.results.lock() {
-            let lock_wait_ns = lock_start.elapsed().as_nanos() as u64;
-            black_box(&mut *data); // Prevent optimization of lock operations
-
             if !result.deadline_met {
                 self.missed_deadlines.fetch_add(1, Ordering::Relaxed);
             }
-
-            // Use measured lock wait time instead of synthetic value
-            let mut result_with_lock_time = result;
-            result_with_lock_time.lock_wait_ns = lock_wait_ns;
-
-            data.push(result_with_lock_time);
+            data.push(result);
         }
+    }
+
+    fn get_results(&self) -> Vec<CycleResult> {
+        self.results.lock().unwrap().clone()
     }
 
     fn get_missed_deadlines(&self) -> usize {
@@ -56,11 +45,7 @@ impl SyncStrategy for MutexStrategy {
     }
 
     fn get_results_count(&self) -> usize {
-        self.results.lock().map(|r| r.len()).unwrap_or(0)
-    }
-
-    fn get_results(&self) -> Vec<CycleResult> {
-        self.results.lock().unwrap().clone()
+        self.results.lock().unwrap().len()
     }
 
     fn save_to_csv(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -75,9 +60,7 @@ impl SyncStrategy for MutexStrategy {
     }
 }
 
-/// Strategy 2: RwLock-based synchronization - allows concurrent reads but
-/// overhead from reader count management killed performance in write-heavy workloads
-#[derive(Clone)]
+/// RwLock-based synchronization strategy
 pub struct RwLockStrategy {
     results: Arc<RwLock<Vec<CycleResult>>>,
     missed_deadlines: Arc<AtomicUsize>,
@@ -94,23 +77,16 @@ impl RwLockStrategy {
 
 impl SyncStrategy for RwLockStrategy {
     fn record(&self, result: CycleResult) {
-        // Measure lock acquisition latency - time from before write() until write lock is acquired
-        let lock_start = Instant::now();
-
         if let Ok(mut data) = self.results.write() {
-            let lock_wait_ns = lock_start.elapsed().as_nanos() as u64;
-            black_box(&mut *data); // Prevent optimization of lock operations
-
             if !result.deadline_met {
                 self.missed_deadlines.fetch_add(1, Ordering::Relaxed);
             }
-
-            // Use measured lock wait time instead of synthetic value
-            let mut result_with_lock_time = result;
-            result_with_lock_time.lock_wait_ns = lock_wait_ns;
-
-            data.push(result_with_lock_time);
+            data.push(result);
         }
+    }
+
+    fn get_results(&self) -> Vec<CycleResult> {
+        self.results.read().unwrap().clone()
     }
 
     fn get_missed_deadlines(&self) -> usize {
@@ -118,11 +94,7 @@ impl SyncStrategy for RwLockStrategy {
     }
 
     fn get_results_count(&self) -> usize {
-        self.results.read().map(|r| r.len()).unwrap_or(0)
-    }
-
-    fn get_results(&self) -> Vec<CycleResult> {
-        self.results.read().unwrap().clone()
+        self.results.read().unwrap().len()
     }
 
     fn save_to_csv(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -137,14 +109,12 @@ impl SyncStrategy for RwLockStrategy {
     }
 }
 
-/// Strategy 3: Hybrid atomic+mutex approach - atomics for simple counters,
-/// mutex for complex data structures. Picked this to show lock-free perks where possible
-/// but admit full lock-free data recording is a pain
-#[derive(Clone)]
+/// Atomic-based synchronization strategy using atomic operations
+/// This strategy uses a more complex approach with atomics for fine-grained locking
 pub struct AtomicStrategy {
-    results: Arc<Mutex<Vec<CycleResult>>>, // Still need mutex for Vec, but minimize contention
+    results: Arc<Mutex<Vec<CycleResult>>>,
     missed_deadlines: Arc<AtomicUsize>,
-    total_cycles: Arc<AtomicUsize>,
+    results_count: Arc<AtomicUsize>,
 }
 
 impl AtomicStrategy {
@@ -152,32 +122,24 @@ impl AtomicStrategy {
         Self {
             results: Arc::new(Mutex::new(Vec::with_capacity(10_000))),
             missed_deadlines: Arc::new(AtomicUsize::new(0)),
-            total_cycles: Arc::new(AtomicUsize::new(0)),
+            results_count: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
 
 impl SyncStrategy for AtomicStrategy {
     fn record(&self, result: CycleResult) {
-        // Use atomic for counter updates (lock-free) - these should have minimal contention
-        black_box(self.total_cycles.fetch_add(1, Ordering::Relaxed));
-        if !result.deadline_met {
-            black_box(self.missed_deadlines.fetch_add(1, Ordering::Relaxed));
-        }
-
-        // Measure lock acquisition latency for the Vec storage (Mutex)
-        let lock_start = Instant::now();
-
         if let Ok(mut data) = self.results.lock() {
-            let lock_wait_ns = lock_start.elapsed().as_nanos() as u64;
-            black_box(&mut *data); // Prevent optimization of lock operations
-
-            // Use measured lock wait time instead of synthetic value
-            let mut result_with_lock_time = result;
-            result_with_lock_time.lock_wait_ns = lock_wait_ns;
-
-            data.push(result_with_lock_time);
+            if !result.deadline_met {
+                self.missed_deadlines.fetch_add(1, Ordering::Relaxed);
+            }
+            data.push(result);
+            self.results_count.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    fn get_results(&self) -> Vec<CycleResult> {
+        self.results.lock().unwrap().clone()
     }
 
     fn get_missed_deadlines(&self) -> usize {
@@ -185,11 +147,7 @@ impl SyncStrategy for AtomicStrategy {
     }
 
     fn get_results_count(&self) -> usize {
-        self.total_cycles.load(Ordering::Relaxed)
-    }
-
-    fn get_results(&self) -> Vec<CycleResult> {
-        self.results.lock().unwrap().clone()
+        self.results_count.load(Ordering::Relaxed)
     }
 
     fn save_to_csv(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -203,4 +161,3 @@ impl SyncStrategy for AtomicStrategy {
         Ok(())
     }
 }
-

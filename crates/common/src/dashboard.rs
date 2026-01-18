@@ -1,18 +1,9 @@
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
-use crate::{SensorData, ActuatorFeedback, ActuatorType};
+use crate::{SensorData, ActuatorType, ActuatorFeedback};
 
-/// Real-time data point for dashboard visualization
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DashboardData {
-    pub timestamp: u64,
-    pub sensor_data: Option<SensorData>,
-    pub actuator_feedback: Option<(ActuatorType, ActuatorFeedback)>,
-    pub metrics: Option<MetricsSnapshot>,
-}
-
-/// Snapshot of current system metrics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MetricsSnapshot {
     pub cycle_id: u64,
     pub processing_time_ns: u64,
@@ -22,55 +13,58 @@ pub struct MetricsSnapshot {
     pub lateness_ns: i64,
 }
 
-/// Thread-safe buffer using Arc<Mutex<>> - picked over channels to allow
-/// multiple consumers (dashboard + logging) without blocking real-time loops
-#[derive(Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardData {
+    pub timestamp: u64,
+    pub sensor_data: Option<SensorData>,
+    pub actuator_feedback: Option<(ActuatorType, ActuatorFeedback)>,
+    pub metrics: Option<MetricsSnapshot>,
+}
+
+#[derive(Debug, Clone)]
 pub struct DashboardBuffer {
-    data: Arc<Mutex<Vec<DashboardData>>>,
-    max_size: usize,
+    buffer: Arc<Mutex<VecDeque<DashboardData>>>,
+    capacity: usize,
 }
 
 impl DashboardBuffer {
-    pub fn new(max_size: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         Self {
-            data: Arc::new(Mutex::new(Vec::with_capacity(max_size))),
-            max_size,
+            buffer: Arc::new(Mutex::new(VecDeque::with_capacity(capacity))),
+            capacity,
         }
     }
 
-    pub fn add(&self, item: DashboardData) {
-        let mut buffer = self.data.lock().unwrap();
-        buffer.push(item);
-        
-        // Keep only the most recent data
-        if buffer.len() > self.max_size {
-            buffer.remove(0);
+    pub fn add(&self, data: DashboardData) {
+        let mut buffer = self.buffer.lock().unwrap();
+        if buffer.len() >= self.capacity {
+            buffer.pop_front();
         }
-    }
-
-    pub fn get_recent(&self, count: usize) -> Vec<DashboardData> {
-        let buffer = self.data.lock().unwrap();
-        let start = buffer.len().saturating_sub(count);
-        buffer[start..].to_vec()
+        buffer.push_back(data);
     }
 
     pub fn get_all(&self) -> Vec<DashboardData> {
-        self.data.lock().unwrap().clone()
+        let buffer = self.buffer.lock().unwrap();
+        buffer.iter().cloned().collect()
+    }
+
+    pub fn get_recent(&self, count: usize) -> Vec<DashboardData> {
+        let buffer = self.buffer.lock().unwrap();
+        buffer.iter().rev().take(count).cloned().collect()
     }
 
     pub fn clear(&self) {
-        self.data.lock().unwrap().clear();
+        let mut buffer = self.buffer.lock().unwrap();
+        buffer.clear();
     }
 
     pub fn len(&self) -> usize {
-        self.data.lock().unwrap().len()
+        let buffer = self.buffer.lock().unwrap();
+        buffer.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        let buffer = self.buffer.lock().unwrap();
+        buffer.is_empty()
     }
 }
-
-
-
-
-
-
-
-

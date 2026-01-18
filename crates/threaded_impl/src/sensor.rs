@@ -9,8 +9,6 @@ use common::{
 };
 use common::metrics::CycleResult;
 
-// Filter window starts at 5 samples - kinda balances noise reduction with staying responsive
-// Max 10 for when things get really noisy, min 3 to keep it snappy
 const FILTER_WINDOW: usize = 5;
 const MAX_FILTER_WINDOW: usize = 10;
 const MIN_FILTER_WINDOW: usize = 3;
@@ -32,13 +30,10 @@ pub fn run_sensor_thread(
 
     let mut force_hist = Vec::with_capacity(FILTER_WINDOW);
 
-    // Main sensor loop - uses std::thread::sleep which can drift on general-purpose OS
-    // Picked this over busy-waiting to save CPU, even though timing gets messed up
     while !shutdown_flag.load(Ordering::Relaxed) {
         let expected = next_tick;
         next_tick += period;
 
-        // Simple sleep approach - will acumulate timing errors over time
         if Instant::now() < expected {
             thread::sleep(expected - Instant::now());
         }
@@ -49,7 +44,7 @@ pub fn run_sensor_thread(
         let raw_force = 50.0 + (cycle_id as f64 * 0.1).sin() * 10.0;
 
         // Log sensor data generation (more frequent for demonstration)
-        if config.enable_logging && cycle_id % 10 == 0 {
+        if cycle_id % 10 == 0 {
             let elapsed = actual.duration_since(start_time).as_secs_f64();
             println!("[{:>8}] SENSOR: Generated cycle #{:<4} - Force: {:.2}, Position: {:.2}, Temp: {:.1}",
                      format!("{:.3}s", elapsed), cycle_id, raw_force, 0.0, 25.0);
@@ -63,20 +58,16 @@ pub fn run_sensor_thread(
         let filtered_force =
             force_hist.iter().sum::<f64>() / force_hist.len() as f64;
 
-        // Anomaly detection at 80N threshold - picked this as a reasonable safety limit for gripper force
-        // Could be lower but didn't want false alarms from normal variations
         let anomaly = filtered_force.abs() > 80.0;
         if anomaly {
             diagnostics.record_anomaly();
-            if config.enable_logging {
-                let elapsed = actual.duration_since(start_time).as_secs_f64();
-                println!("[{:>8}] [ERROR] SENSOR: Anomaly detected - Force: {:.2} (>80.0 threshold) at cycle #{}",
-                         format!("{:.3}s", elapsed), filtered_force, cycle_id);
-            }
+            let elapsed = actual.duration_since(start_time).as_secs_f64();
+            println!("[{:>8}] [ERROR] SENSOR: Anomaly detected - Force: {:.2} (>80.0 threshold) at cycle #{}",
+                     format!("{:.3}s", elapsed), filtered_force, cycle_id);
         }
 
         // Log processing results more frequently
-        if config.enable_logging && cycle_id % 10 == 0 {
+        if cycle_id % 10 == 0 {
             let elapsed = actual.duration_since(start_time).as_secs_f64();
             let processing_us = (actual.duration_since(expected)).as_nanos() as f64 / 1000.0;
             println!("[{:>8}] SENSOR: Filtered data - Anomaly: {}, Processing: {:.2}μs ✓ (deadline: 200μs)",
@@ -97,8 +88,7 @@ pub fn run_sensor_thread(
         const PROCESSING_DEADLINE_NS: u64 = 200_000; // 0.2 ms
         let processing_deadline_met = processing_time_ns <= PROCESSING_DEADLINE_NS;
 
-        // Measure transmission time - using bounded channel to prevent memory exhaustion
-        // Capacity of 100 picked as reasonable buffer for timing variations
+        // Measure transmission time
         let transmission_start = Instant::now();
         let transmission_success = sender.send(data).is_ok();
         let transmission_time = transmission_start.elapsed();
@@ -106,7 +96,7 @@ pub fn run_sensor_thread(
         const TRANSMISSION_DEADLINE_NS: u64 = 100_000; // 0.1 ms
         let transmission_deadline_met = transmission_time_ns <= TRANSMISSION_DEADLINE_NS;
 
-        if config.enable_logging && cycle_id % 20 == 0 {
+        if cycle_id % 20 == 0 {
             let transmission_us = transmission_time_ns as f64 / 1000.0;
             println!("[{:012}] SENSOR: Transmitted to dispatcher {} (latency: {:.2}μs, deadline: 100μs)",
                     timestamp_ns, if transmission_success { "✓" } else { "✗" }, transmission_us);
@@ -114,7 +104,7 @@ pub fn run_sensor_thread(
 
         // Log deadline misses
         let deadline_met = processing_deadline_met && transmission_deadline_met && transmission_success;
-        if config.enable_logging && !deadline_met {
+        if !deadline_met {
             if !processing_deadline_met {
                 println!("[DEADLINE] Sensor processing missed: {:.2}μs > 200μs (cycle #{})",
                         processing_time_ns as f64 / 1000.0, cycle_id);
@@ -134,13 +124,13 @@ pub fn run_sensor_thread(
         let lock_wait_ns = lock_start.elapsed().as_nanos() as u64;
 
         // Periodic performance summary
-        if config.enable_logging && cycle_id % 100 == 0 && cycle_id > 0 {
+        if cycle_id % 100 == 0 && cycle_id > 0 {
             let elapsed = actual.duration_since(start_time).as_secs_f64();
             let cycles_per_sec = cycle_id as f64 / elapsed;
             let anomalies = diagnostics.anomaly_count.load(Ordering::Relaxed);
             let emergencies = diagnostics.emergency_stops.load(Ordering::Relaxed);
             println!("[{:012}] [PERF] Threaded system running - {:.1} cycles/sec, Anomalies: {}, Emergencies: {}",
-                     timestamp_ns, cycles_per_sec, anomalies, emergencies);
+                    timestamp_ns, cycles_per_sec, anomalies, emergencies);
         }
 
         recorder.record(CycleResult {
@@ -165,39 +155,29 @@ pub fn run_sensor_thread(
         });
 
         while let Ok(feedback) = feedback_rx.try_recv() {
-            if config.enable_logging {
-                if matches!(feedback.status, common::ActuatorStatus::Emergency) {
-                    diagnostics.record_emergency();
-                    println!("[{:012}] FEEDBACK: Emergency state received from actuator - cycle #{}", timestamp_ns, feedback.sensor_id);
-                }
-
-                if cycle_id % 20 == 0 {
-                    println!("[{:012}] FEEDBACK: Received from actuator - Error: {:.2}, Control: {:.2}, Status: {:?}",
-                            timestamp_ns, feedback.error, feedback.control_output, feedback.status);
-                }
-            } else {
-                // Still process emergency feedback even when logging is disabled
-                if matches!(feedback.status, common::ActuatorStatus::Emergency) {
-                    diagnostics.record_emergency();
-                }
+            if matches!(feedback.status, common::ActuatorStatus::Emergency) {
+                diagnostics.record_emergency();
+                println!("[{:012}] FEEDBACK: Emergency state received from actuator - cycle #{}", timestamp_ns, feedback.sensor_id);
             }
 
-            // Dynamic filter adjustment - trades speed for stability based on actuator feedback
-            // Error > 5.0 means system unstable, so increase filtering (slower but smoother)
-            // Error < 1.0 means system stable, so reduce filtering (faster response)
-            // This adaptive approach chosen over fixed filtering to optimize performance
+            if cycle_id % 20 == 0 {
+                println!("[{:012}] FEEDBACK: Received from actuator - Error: {:.2}, Control: {:.2}, Status: {:?}",
+                        timestamp_ns, feedback.error, feedback.control_output, feedback.status);
+            }
+
+            // Dynamic recalibration based on actuator feedback
             if feedback.error.abs() > 5.0 {
-                // Increase filter window size -> better noise reduction when errors high
+                // Increase filter window size for better noise reduction when errors are high
                 current_filter_window = (current_filter_window + 1).min(MAX_FILTER_WINDOW);
                 force_hist.resize(current_filter_window, 0.0);
-                if config.enable_logging && cycle_id % 20 == 0 {
+                if cycle_id % 20 == 0 {
                     println!("[{:012}] RECOVERY: Increased filter window to {} for better noise reduction", timestamp_ns, current_filter_window);
                 }
             } else if feedback.error.abs() < 1.0 {
-                // Reduce filter window size -> faster response when system stable
+                // Reduce filter window size for faster response when system is stable
                 current_filter_window = (current_filter_window - 1).max(MIN_FILTER_WINDOW);
                 force_hist.resize(current_filter_window, 0.0);
-                if config.enable_logging && cycle_id % 20 == 0 {
+                if cycle_id % 20 == 0 {
                     println!("[{:012}] RECOVERY: Reduced filter window to {} for faster response", timestamp_ns, current_filter_window);
                 }
             }
@@ -205,7 +185,7 @@ pub fn run_sensor_thread(
             // Adjust position base slightly based on actuator error to compensate for drift
             if feedback.error.abs() > 3.0 {
                 _position_base -= feedback.error * 0.01; // Small correction based on actuator feedback
-                if config.enable_logging && cycle_id % 20 == 0 {
+                if cycle_id % 20 == 0 {
                     println!("[{:012}] RECOVERY: Position compensation applied ({:.3})", timestamp_ns, -feedback.error * 0.01);
                 }
             }

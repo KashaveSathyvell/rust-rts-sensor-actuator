@@ -30,10 +30,8 @@ pub async fn run_actuator_task(
     let mut cycle_count = 0u64;
 
     let init_time = start_time.elapsed().as_secs_f64();
-    if config.enable_logging {
-        println!("[{:>8}] [SYSTEM] {:?} actuator initialized - Deadline: {:.1}ms",
-                 format!("{:.3}s", init_time), actuator_type, deadline.as_millis() as f64);
-    }
+    println!("[{:>8}] [SYSTEM] {:?} actuator initialized - Deadline: {:.1}ms",
+             format!("{:.3}s", init_time), actuator_type, deadline.as_millis() as f64);
 
     while !shutdown.load(Ordering::Relaxed) {
         let data = match receiver.recv().await {
@@ -47,14 +45,11 @@ pub async fn run_actuator_task(
         let error = -data.position;
         let control = pid.compute(error, config.sensor_period_ms as f64 / 1000.0);
 
-        // Emergency threshold at ±10.0 units - picked as safety limit beyond which
-        // system is considered failed rather than just degraded. Hard real-time principle
+        // Determine actuator status based on error magnitude
         let status = if error.abs() > 10.0 {
-            if config.enable_logging {
-                let elapsed = start_time.elapsed().as_secs_f64();
-                println!("[{:>8}] [EMERGENCY] {:?}: Entering emergency mode - Error: {:.2} (>10.0 threshold)",
-                         format!("{:.3}s", elapsed), actuator_type, error.abs());
-            }
+            let elapsed = start_time.elapsed().as_secs_f64();
+            println!("[{:>8}] [EMERGENCY] {:?}: Entering emergency mode - Error: {:.2} (>10.0 threshold)",
+                     format!("{:.3}s", elapsed), actuator_type, error.abs());
             ActuatorStatus::Emergency
         } else if error.abs() > error_threshold {
             ActuatorStatus::Correcting
@@ -63,7 +58,7 @@ pub async fn run_actuator_task(
         };
 
         // Log actuator processing more frequently for demonstration
-        if config.enable_logging && cycle_count % 10 == 0 {
+        if cycle_count % 10 == 0 {
             let elapsed = start_time.elapsed().as_secs_f64();
             println!("[{:>8}] {:?}: Processed cycle #{:<4} - Error: {:.2}, Control: {:.2} ({:?})",
                      format!("{:.3}s", elapsed), actuator_type, data.id, error, control, status);
@@ -82,7 +77,7 @@ pub async fn run_actuator_task(
         let deadline_ms = deadline.as_nanos() as f64 / 1_000_000.0;
 
         // Log processing results more frequently
-        if config.enable_logging && cycle_count % 10 == 0 {
+        if cycle_count % 10 == 0 {
             let elapsed = start_time.elapsed().as_secs_f64();
             println!("[{:>8}] {:?}: Processed {} (latency: {:.2}ms, deadline: {:.1}ms)",
                      format!("{:.3}s", elapsed), actuator_type, if deadline_met { "✓" } else { "✗" }, processing_ms, deadline_ms);
@@ -98,14 +93,14 @@ pub async fn run_actuator_task(
         let total_latency_ns = start_time.elapsed().as_nanos() as u64 - data.timestamp;
 
         // Log deadline misses with enhanced formatting
-        if config.enable_logging && !deadline_met {
+        if !deadline_met {
             let elapsed = start_time.elapsed().as_secs_f64();
             println!("[{:>8}] [DEADLINE] {:?}: Processing missed - {:.2}ms > {:.1}ms (cycle #{}) ✗",
                      format!("{:.3}s", elapsed), actuator_type, processing_ms, deadline_ms, data.id);
         }
 
         // Log shared resource access occasionally
-        if config.enable_logging && cycle_count % 50 == 0 {
+        if cycle_count % 50 == 0 {
             let elapsed = start_time.elapsed().as_secs_f64();
             println!("[{:>8}] [SYNC] {:?} accessing shared recorder (performance metrics)",
                      format!("{:.3}s", elapsed), actuator_type);
@@ -136,7 +131,7 @@ pub async fn run_actuator_task(
         let feedback_deadline_met = feedback_time.as_nanos() as u64 <= FEEDBACK_DEADLINE_NS;
 
         // Log feedback transmission more frequently
-        if config.enable_logging && cycle_count % 10 == 0 {
+        if cycle_count % 10 == 0 {
             let elapsed = start_time.elapsed().as_secs_f64();
             let feedback_us = feedback_time.as_nanos() as f64 / 1000.0;
             println!("[{:>8}] {:?}: Feedback sent {} (latency: {:.2}μs, deadline: 500μs)",
@@ -144,7 +139,7 @@ pub async fn run_actuator_task(
         }
 
         // Log feedback transmission failures
-        if config.enable_logging && !feedback_sent {
+        if !feedback_sent {
             let elapsed = start_time.elapsed().as_secs_f64();
             println!("[{:>8}] [ERROR] {:?}: Feedback transmission failed - channel full (cycle #{})",
                      format!("{:.3}s", elapsed), actuator_type, data.id);
